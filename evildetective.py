@@ -22,7 +22,7 @@ from PIL import Image
 from dotenv import dotenv_values
 from datetime import datetime
 from enum import Enum
-from colorama import Fore, Back, Style, init
+from colorama import Back, Fore, Style, init
 
 init()
 
