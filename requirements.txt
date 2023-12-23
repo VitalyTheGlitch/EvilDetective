@@ -1,0 +1,9 @@
+colorama
+imagehash
+Pillow
+python-dotenv
+requests
+requests_future
+selenium
+vk_requests
+webdriver_manager

@@ -1,5 +1,3 @@
-import numpy as np
-import cv2
 import requests
 import urllib
 import vk_requests
@@ -17,8 +15,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 from requests_futures.sessions import FuturesSession
 from PIL import Image
+import imagehash
 from dotenv import dotenv_values
 from datetime import datetime
 from enum import Enum
@@ -91,7 +91,6 @@ def fail(*args, sep=' ', end='\n', **kwargs):
     cprint(*args, color=Fore.RED, mark='!', sep=sep, end=end, frame_index=2, **kwargs)
 
     exit(1)
-
 
 def tally(*args, color=Fore.BLUE, mark='>>>', sep=' ', end='\n', **kwargs):
     cprint(color + f'{bright}{mark}{rst}', *args, mark=None, sep=sep, end=end, frame_index=2, **kwargs)
@@ -234,36 +233,41 @@ def get_response(request_future, error_type, social_network):
             error_context = None
     except requests.exceptions.HTTPError as errh:
         error_context = 'HTTP Error'
+
         exception_text = str(errh)
     except requests.exceptions.ProxyError as errp:
         error_context = 'Proxy Error'
+
         exception_text = str(errp)
     except requests.exceptions.ConnectionError as errc:
         error_context = 'Error Connecting'
+
         exception_text = str(errc)
     except requests.exceptions.Timeout as errt:
         error_context = 'Timeout Error'
+
         exception_text = str(errt)
     except requests.exceptions.RequestException as err:
         error_context = 'Unknown Error'
+
         exception_text = str(err)
 
     return response, error_context, exception_text
 
 
-def interpolate_string(object, username):
-    if isinstance(object, str):
-        return object.replace('{}', username)
+def interpolate_string(obj, username):
+    if isinstance(obj, str):
+        return obj.replace('{}', username)
 
-    elif isinstance(object, dict):
-        for key, value in object.items():
-            object[key] = interpolate_string(value, username)
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            obj[key] = interpolate_string(value, username)
 
-    elif isinstance(object, list):
-        for i in object:
-            object[i] = interpolate_string(object[i], username)
+    elif isinstance(obj, list):
+        for o in obj:
+            obj[o] = interpolate_string(obj[o], username)
 
-    return object
+    return obj
 
 
 def usernames(username, site_data, proxy=None, timeout=60):
@@ -488,13 +492,11 @@ class YandexImages:
 
         for cbir_site in cbir_sites:
             title = cbir_site.find_element(By.CLASS_NAME, 'CbirSites-ItemTitle').text
-            image = cbir_site.find_element(By.CLASS_NAME, 'Thumb-Handle').value_of_css_property('background').split('"')[1]
-            source = cbir_site.find_element(By.TAG_NAME, 'a').get_attribute('href')
+            image = cbir_site.find_element(By.TAG_NAME, 'a').get_attribute('href')
 
             item = {
                 'title': title,
                 'image': image,
-                'source': source
             }
 
             items.append(item)
@@ -505,9 +507,14 @@ class YandexImages:
         options = Options()
         options.add_argument('--headless')
 
-        service = Service(executable_path='driver/chromedriver.exe', log_path=os.devnull)
+        service = Service(ChromeDriverManager().install(), log_path=os.devnull)
 
-        driver = webdriver.Chrome(options=options, service=service)
+        try:
+            driver = webdriver.Chrome(options=options, service=service)
+        except Exception as e:
+            fail(str(e))
+
+            os.abort()
 
         driver.get(self.search_url(image_url))
 
@@ -693,22 +700,20 @@ def username_search(username):
     return results
 
 
-def contains_face(image_url):
-    r = requests.get(image_url)
+def similar(image_1, image_2):
+    r = requests.get(image_1)
 
-    image = r.content
+    image_1 = Image.open(io.BytesIO(r.content))
 
-    image = Image.open(io.BytesIO(image))
+    r = requests.get(image_2)
 
-    image = np.asarray(image)
+    image_2 = Image.open(io.BytesIO(r.content))
 
-    cascade = cv2.CascadeClassifier('resources/lbpcascade_frontalface.xml')
+    hash_1 = imagehash.average_hash(image_1)
+    hash_2 = imagehash.average_hash(image_2) 
+    cutoff = 10
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-
-    return bool(faces)
+    return hash_1 - hash_2 < cutoff
 
 
 def get_input():
@@ -752,11 +757,14 @@ try:
 except Exception as e:
     fail(str(e))
 
-cprint('{bred}Evil Detective{rst}\n', mark=None)
+cprint('{bred}E{byellow}vil {bred}D{byellow}etective{rst}\n', mark=None)
 
-first_name, last_name, city, interests = get_input()
+try:
+    first_name, last_name, city, interests = get_input()
 
-vk_info = vk_search(first_name, last_name, city, interests)
+    vk_info = vk_search(first_name, last_name, city, interests)
 
-yim = YandexImages()
-image = yim.search(vk_info['image'])
+    yim = YandexImages()
+    result = yim.search(vk_info['image'])
+except KeyboardInterrupt:
+    pass
