@@ -1,8 +1,10 @@
 import requests
 import urllib
 import vk_requests
+import imagehash
 import io
 import json
+import re
 import os
 import sys
 import random
@@ -18,7 +20,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 from requests_futures.sessions import FuturesSession
 from PIL import Image
-import imagehash
+
 from dotenv import dotenv_values
 from datetime import datetime
 from enum import Enum
@@ -285,7 +287,7 @@ def usernames(username, site_data, proxy=None, timeout=60):
     results_total = {}
 
     for social_network, net_info in site_data.items():
-        results_site = {
+        site_results = {
             'url_main': net_info.get('urlMain')
         }
 
@@ -301,14 +303,14 @@ def usernames(username, site_data, proxy=None, timeout=60):
         regex_check = net_info.get('regexCheck')
 
         if regex_check and re.search(regex_check, username) is None:
-            results_site['status'] = QueryResult(username, social_network, url, QueryStatus.ILLEGAL)
+            site_results['status'] = QueryResult(username, social_network, url, QueryStatus.ILLEGAL)
 
-            results_site['url_user'] = ''
-            results_site['http_status'] = ''
-            results_site['response_text'] = ''
+            site_results['url_user'] = ''
+            site_results['http_status'] = ''
+            site_results['response_text'] = ''
 
         else:
-            results_site['url_user'] = url
+            site_results['url_user'] = url
             url_probe = net_info.get('urlProbe')
             request_method = net_info.get('request_method')
             request_payload = net_info.get('request_payload')
@@ -377,13 +379,13 @@ def usernames(username, site_data, proxy=None, timeout=60):
 
             net_info['request_future'] = future
 
-        results_total[social_network] = results_site
+        results_total[social_network] = site_results
 
     for social_network, net_info in site_data.items():
-        results_site = results_total.get(social_network)
+        site_results = results_total.get(social_network)
 
-        url = results_site.get('url_user')
-        status = results_site.get('status')
+        url = site_results.get('url_user')
+        status = site_results.get('status')
 
         if status is not None:
             continue
@@ -466,65 +468,67 @@ def usernames(username, site_data, proxy=None, timeout=60):
             context=error_context
         )
 
-        results_site['status'] = result
-        results_site['http_status'] = http_status
-        results_site['response_text'] = response_text
+        site_results['status'] = result
+        site_results['http_status'] = http_status
+        site_results['response_text'] = response_text
 
-        results_total[social_network] = results_site
+        results_total[social_network] = site_results
 
     return results_total
 
 
-class YandexImages:
-    name = 'Yandex'
-    url = 'https://yandex.com/images/search?url={}&rpt=imageview'
+def yandex_search(urls):
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--log-level=3')
+    options.add_argument('user-data-dir=' + os.getenv('LOCALAPPDATA') + r'\\Google\\Chrome\\User Data\\EvilDetective')
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
 
-    def search_url(self, image_url):
-        return self.url.format(urllib.parse.quote_plus(image_url))
+    service = Service(ChromeDriverManager().install(), log_path=os.devnull)
 
-    def process(self, driver):
-        if not driver.find_element(By.ID, 'cbir-sites-title'):
-            return []
+    driver = webdriver.Chrome(options=options, service=service)
 
-        items = []
+    results = []
+
+    for url in urls:
+        search_url = f'https://yandex.com/images/search?url={urllib.parse.quote_plus(url)}&rpt=imageview'
+
+        driver.get(search_url)
+
+        time.sleep(3)
+
+        try:
+            if not driver.find_element(By.ID, 'cbir-sites-title'):
+                continue
+        except:
+            continue
 
         cbir_sites = driver.find_elements(By.CLASS_NAME, 'CbirSites-Item')
 
         for cbir_site in cbir_sites:
-            title = cbir_site.find_element(By.CLASS_NAME, 'CbirSites-ItemTitle').text
-            image = cbir_site.find_element(By.TAG_NAME, 'a').get_attribute('href')
+            title_element = cbir_site.find_element(By.CLASS_NAME, 'CbirSites-ItemTitle').find_element(By.TAG_NAME, 'a')
 
-            item = {
+            title = title_element.text
+            source = title_element.get_attribute('href')
+
+            image = cbir_site.find_element(By.CLASS_NAME, 'CbirSites-ItemThumb').find_element(By.TAG_NAME, 'a').get_attribute('href')
+
+            try:
+                if not similar(url, image):
+                    continue
+            except:
+                continue
+
+            result = {
                 'title': title,
-                'image': image,
+                'source': source
             }
 
-            items.append(item)
+            results.append(result)
 
-        return items
+    driver.close()
 
-    def search(self, image_url):
-        options = Options()
-        options.add_argument('--headless')
-
-        service = Service(ChromeDriverManager().install(), log_path=os.devnull)
-
-        try:
-            driver = webdriver.Chrome(options=options, service=service)
-        except Exception as e:
-            fail(str(e))
-
-            os.abort()
-
-        driver.get(self.search_url(image_url))
-
-        time.sleep(2)
-
-        result = self.process(driver)
-
-        driver.close()
-
-        return result
+    return results
 
 
 def get_profile_groups(profile_id):
@@ -559,8 +563,12 @@ def get_profile_groups(profile_id):
 def get_profile_info(profile_id):
     profile_info = api.users.get(
         user_ids=profile_id,
-        fields='bdate, screen_name, sex, last_seen, online, personal, photo_max_orig'
+        fields='bdate, screen_name, last_seen, online, personal'
     )[0]
+
+    photos = api.photos.get(owner_id=profile_id, album_id='profile', rev=1, count=5)['items']
+
+    images = [photo['sizes'][-1]['url'] for photo in photos]
 
     platform = [
         'Мобильная версия сайта',
@@ -621,9 +629,8 @@ def get_profile_info(profile_id):
 
     processed_info = {
         'name': profile_info['first_name'] + ' ' + profile_info['last_name'],
-        'bdate': profile_info.get('bdate'),
-        'online': 'Online' if profile_info['online'] else 'Offline',
-        'image': profile_info['photo_max_orig']
+        'online': profile_info['online'],
+        'images': images
     }
 
     if profile_info['screen_name'][2:] != str(profile_id):
@@ -711,13 +718,13 @@ def similar(image_1, image_2):
 
     hash_1 = imagehash.average_hash(image_1)
     hash_2 = imagehash.average_hash(image_2) 
-    cutoff = 10
+    cutoff = 3
 
     return hash_1 - hash_2 < cutoff
 
 
 def get_input():
-    target = input('Target name: ')
+    target = input(f'{Style.BRIGHT}{Fore.RED}Target name:{Fore.RESET} ')
 
     if len(target.rsplit()) == 2:
         first_name, last_name = target.rsplit()
@@ -733,9 +740,9 @@ def get_input():
     first_name = first_name.capitalize()
     last_name = last_name.capitalize()
 
-    city = input('Target city: ')
+    city = input(f'{Style.BRIGHT}{Fore.RED}Target city:{Fore.RESET} ')
 
-    if not city.isalpha() or len(city.split(' ')) > 2:
+    if len(city.split(' ')) > 2:
         fail('Invalid city.')
 
     cities = api.database.getCities(country_id=1, q=city)['items']
@@ -745,11 +752,28 @@ def get_input():
 
     city = cities[0]['id']
 
-    interests = input('Target interests (separated by comma): ')
+    interests = input(f'{Style.BRIGHT}{Fore.RED}Target interests {Fore.RESET}({Fore.RED}separated by comma{Fore.RESET}){Fore.RED}:{Fore.RESET} ')
 
     interests = list(map(lambda i: i.strip().lower(), interests.split(', ')))
 
     return first_name, last_name, city, interests
+
+
+def debug():
+    options = Options()
+    options.add_argument('--log-level=3')
+    options.add_argument('user-data-dir=' + os.getenv('LOCALAPPDATA') + r'\\Google\\Chrome\\User Data\\EvilDetective')
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
+
+    service = Service(ChromeDriverManager().install(), log_path=os.devnull)
+
+    driver = webdriver.Chrome(options=options, service=service)
+
+    input()
+
+    driver.close()
+
+    os.abort()
 
 
 try:
@@ -760,11 +784,54 @@ except Exception as e:
 cprint('{bred}E{byellow}vil {bred}D{byellow}etective{rst}\n', mark=None)
 
 try:
+    if False:
+        debug()
+
     first_name, last_name, city, interests = get_input()
 
     vk_info = vk_search(first_name, last_name, city, interests)
 
-    yim = YandexImages()
-    result = yim.search(vk_info['image'])
+    images = yandex_search(vk_info['images'])
+
+    for i in range(len(images)):
+        title = images[i]['title']
+        source = images[i]['source']
+
+        images[i] = '{bright}' + source
+
+    images = '\n'.join(images)
+
+    sites = username_search(vk_info['username'])
+    sites = [site for site in sites if str(sites[site]['status']) == 'Claimed']
+    sites = '{bred},{crst} '.join(sites)
+
+    info_text = '\n{bred}Name:{crst} ' + vk_info['name'] + ' {red}({crst}' + vk_info['username'] + '{red}){rst}'
+
+    if vk_info['online']:
+        info_text += ' {bgreen}ONLINE{rst}\n'
+
+    else:
+        info_text += ' {bred}OFFLINE{rst}\n'
+
+        if 'last_seen' in vk_info:
+            info_text += '{bred}Last seen:{crst} ' + vk_info['last_seen'] + ' {bred}on{crst} {bred}' + vk_info['platform'] + '\n{rst}'
+
+
+    if 'bdate' in vk_info:
+        info_text += '{bred}Birthday:{crst} ' + vk_info['bdate'] + '\n{rst}'
+
+    info_text += '\n{bred}Political:{crst} ' + vk_info.get('political', '-') + '\n{rst}'
+    info_text += '{bred}People main:{crst} ' + vk_info.get('people_main', '-') + '\n{rst}'
+    info_text += '{bred}Life main:{crst} ' + vk_info.get('life_main', '-') + '\n{rst}'
+    info_text += '{bred}Smoking:{crst} ' + vk_info.get('smoking', '-') + '\n{rst}'
+    info_text += '{bred}Alcohol:{crst} ' + vk_info.get('alcohol', '-') + '\n{rst}'
+
+    if sites:
+        info_text += '{bred}Found on:{crst} ' + sites + '\n{rst}'
+
+    if images:
+        info_text += '\n{bred}Links:{crst}\n' + images + '\n{rst}'
+
+    cprint(info_text, mark=None)
 except KeyboardInterrupt:
     pass
