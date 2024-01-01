@@ -789,9 +789,18 @@ try:
 
     first_name, last_name, city, interests = get_input()
 
+    print()
+    cprint('{byellow}Analyzing profile...')
+
     vk_info = vk_search(first_name, last_name, city, interests)
 
+    cprint('{bgreen}Done!', mark='+')
+    cprint('{byellow}Analyzing images...')
+
     images = yandex_search(vk_info['images'])
+
+    print()
+    cprint('{bgreen}Done!', mark='+')
 
     for i in range(len(images)):
         title = images[i]['title']
@@ -801,9 +810,13 @@ try:
 
     images = '\n'.join(images)
 
+    cprint('{byellow}Analyzing username...')
+
     sites = username_search(vk_info['username'])
     sites = [site for site in sites if str(sites[site]['status']) == 'Claimed']
     sites = '{bred},{crst} '.join(sites)
+
+    cprint('{bgreen}Done!', mark='+')
 
     info_text = '\n{bred}Name:{crst} ' + vk_info['name'] + ' {red}({crst}' + vk_info['username'] + '{red}){rst}'
 
@@ -815,7 +828,6 @@ try:
 
         if 'last_seen' in vk_info:
             info_text += '{bred}Last seen:{crst} ' + vk_info['last_seen'] + ' {bred}on{crst} {bred}' + vk_info['platform'] + '\n{rst}'
-
 
     if 'bdate' in vk_info:
         info_text += '{bred}Birthday:{crst} ' + vk_info['bdate'] + '\n{rst}'
