@@ -759,23 +759,6 @@ def get_input():
     return first_name, last_name, city, interests
 
 
-def debug():
-    options = Options()
-    options.add_argument('--log-level=3')
-    options.add_argument('user-data-dir=' + os.getenv('LOCALAPPDATA') + r'\\Google\\Chrome\\User Data\\EvilDetective')
-    options.add_experimental_option('excludeSwitches', ['enable-logging'])
-
-    service = Service(ChromeDriverManager().install(), log_path=os.devnull)
-
-    driver = webdriver.Chrome(options=options, service=service)
-
-    input()
-
-    driver.close()
-
-    os.abort()
-
-
 try:
     api = vk_requests.create_api(service_token=TOKEN, api_version='5.130')
 except Exception as e:
@@ -784,9 +767,6 @@ except Exception as e:
 cprint('{bred}E{byellow}vil {bred}D{byellow}etective{rst}\n', mark=None)
 
 try:
-    if False:
-        debug()
-
     first_name, last_name, city, interests = get_input()
 
     print()
