@@ -15,12 +15,12 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 from requests_futures.sessions import FuturesSession
 from PIL import Image
-
 from dotenv import dotenv_values
 from datetime import datetime
 from enum import Enum
@@ -98,6 +98,22 @@ def tally(*args, color=Fore.BLUE, mark='>>>', sep=' ', end='\n', **kwargs):
     cprint(color + f'{bright}{mark}{rst}', *args, mark=None, sep=sep, end=end, frame_index=2, **kwargs)
 
 
+def similar(image_1, image_2):
+    r = requests.get(image_1)
+
+    image_1 = Image.open(io.BytesIO(r.content))
+
+    r = requests.get(image_2)
+
+    image_2 = Image.open(io.BytesIO(r.content))
+
+    hash_1 = imagehash.average_hash(image_1)
+    hash_2 = imagehash.average_hash(image_2) 
+    cutoff = 3
+
+    return hash_1 - hash_2 < cutoff
+
+
 class QueryStatus(Enum):
     CLAIMED = 'Claimed'
     AVAILABLE = 'Available'
@@ -153,7 +169,7 @@ class SitesInformation:
             except Exception as error:
                 raise FileNotFoundError(f'Problem while attempting to access data file URL {data_file_path}: {error}')
 
-            if response.status_code != 200:
+            if response.status_mask != 200:
                 raise FileNotFoundError(
                     f'Bad response while accessing '
                     f'data file URL {data_file_path}.'
@@ -231,7 +247,7 @@ def get_response(request_future, error_type, social_network):
     try:
         response = request_future.result()
 
-        if response.status_code:
+        if response.status_mask:
             error_context = None
     except requests.exceptions.HTTPError as errh:
         error_context = 'HTTP Error'
@@ -342,7 +358,7 @@ def usernames(username, site_data, proxy=None, timeout=60):
                 url_probe = interpolate_string(url_probe, username)
 
             if request is None:
-                if net_info['errorType'] == 'status_code':
+                if net_info['errorType'] == 'status_mask':
                     request = session.head
 
                 else:
@@ -391,7 +407,7 @@ def usernames(username, site_data, proxy=None, timeout=60):
             continue
 
         error_type = net_info['errorType']
-        error_code = net_info.get('errorCode')
+        error_mask = net_info.get('errormask')
 
         future = net_info['request_future']
 
@@ -403,12 +419,12 @@ def usernames(username, site_data, proxy=None, timeout=60):
             response_time = None
 
         try:
-            http_status = r.status_code
+            http_status = r.status_mask
         except:
             http_status = '?'
 
         try:
-            response_text = r.text.encode(r.encoding or 'UTF-8')
+            response_text = r.text.enmask(r.encoding or 'UTF-8')
         except:
             response_text = ''
 
@@ -439,18 +455,18 @@ def usernames(username, site_data, proxy=None, timeout=60):
             else:
                 query_status = QueryStatus.AVAILABLE
 
-        elif error_type == 'status_code':
-            if error_code == r.status_code:
+        elif error_type == 'status_mask':
+            if error_mask == r.status_mask:
                 query_status = QueryStatus.AVAILABLE
 
-            elif not r.status_code >= 300 or r.status_code < 200:
+            elif not r.status_mask >= 300 or r.status_mask < 200:
                 query_status = QueryStatus.CLAIMED
 
             else:
                 query_status = QueryStatus.AVAILABLE
 
         elif error_type == 'response_url':
-            if 200 <= r.status_code < 300:
+            if 200 <= r.status_mask < 300:
                 query_status = QueryStatus.CLAIMED
 
             else:
@@ -478,16 +494,6 @@ def usernames(username, site_data, proxy=None, timeout=60):
 
 
 def yandex_search(urls):
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--log-level=3')
-    options.add_argument('user-data-dir=' + os.getenv('LOCALAPPDATA') + r'\\Google\\Chrome\\User Data\\EvilDetective')
-    options.add_experimental_option('excludeSwitches', ['enable-logging'])
-
-    service = Service(ChromeDriverManager().install(), log_path=os.devnull)
-
-    driver = webdriver.Chrome(options=options, service=service)
-
     results = []
 
     for url in urls:
@@ -525,8 +531,6 @@ def yandex_search(urls):
             }
 
             results.append(result)
-
-    driver.close()
 
     return results
 
@@ -698,7 +702,7 @@ def vk_search(first_name, last_name, city, interests):
 
 
 def username_search(username):
-    sites = SitesInformation(os.path.join(os.path.dirname(__file__), 'resources/data.json'))
+    sites = SitesInformation('sites.json')
 
     site_data = {site.name: site.information for site in sites}
 
@@ -707,20 +711,97 @@ def username_search(username):
     return results
 
 
-def similar(image_1, image_2):
-    r = requests.get(image_1)
+def get_phone_masks():
+    results = {}
+    known_providers = ['билайн', 'мегафон', 'мтс', 'ростелеком', 'tele2', 'yota']
 
-    image_1 = Image.open(io.BytesIO(r.content))
+    cprint('{byellow}Downloading phone masks...')
 
-    r = requests.get(image_2)
+    for mask in range(900, 1000):
+        url = f'https://www.kody.su/mobile/{mask}'
 
-    image_2 = Image.open(io.BytesIO(r.content))
+        driver.get(url)
 
-    hash_1 = imagehash.average_hash(image_1)
-    hash_2 = imagehash.average_hash(image_2) 
-    cutoff = 3
+        tables = driver.find_elements(By.TAG_NAME, 'tr')
 
-    return hash_1 - hash_2 < cutoff
+        for table in tables:
+            columns = table.find_elements(By.TAG_NAME, 'td')
+
+            masks = columns[0].get_attribute('innerText')
+            masks = masks.split('\n')
+
+            for m in range(len(masks)):
+                if '.' in masks[m]:
+                    continue
+
+                if not m:
+                    masks[m] = masks[m].replace('-', '')
+
+                else:
+                    masks[m] = f'{mask}{masks[m]}' 
+
+                masks[m] = f'+7{masks[m]}'
+
+            provider = columns[1].get_attribute('innerText').lower()
+            region = columns[2].get_attribute('innerText')
+
+            if provider in known_providers:
+                if region not in results:
+                    results[region] = masks
+
+                else:
+                    results[region].extend(masks)
+
+        cprint('{byellow}Downloading phone masks... ' + f'{mask - 900 + 1}%')
+
+    with open('masks.json', 'w', encoding='utf-8') as masks_file:
+        json.dump(results, masks_file, ensure_ascii=False)
+
+    cprint('{bgreen}Done!', mark='+')
+
+    return results
+
+
+def get_possible_numbers(region, email):
+    masks = phone_masks.get(region)
+
+    driver.get('https://vk.com/login')
+
+    email_input = driver.find_element(By.ID, 'index_email')
+    email_input.send_keys(email)
+    email_input.send_keys(Keys.ENTER)
+
+    phone_xpath = '/html/body/div[1]/div/div/div/div/div[1]/div[1]/div/div/div/form/div[1]/h3/div/span/b/span'
+
+    WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.XPATH, phone_xpath)))
+
+    last_digits = driver.find_element(By.XPATH, phone_xpath).get_attribute('innerText')[-2:]
+
+    for m in range(len(masks)):
+        if 'x' not in masks[m] and masks[m][-2:] != last_digits:
+            continue
+
+        if masks[m].count('x') == 1 and masks[m][-2] != last_digits[0]:
+            continue
+
+        masks[m] = masks[m][:-2] + last_digits
+
+        print(masks[m])
+
+    return masks
+
+def create_driver():
+    options = Options()
+    options.add_argument('--headless')
+    options.add_argument('--log-level=3')
+    options.add_argument('user-data-dir=' + os.getenv('LOCALAPPDATA') + r'\\Google\\Chrome\\User Data\\EvilDetective')
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
+
+    service = Service(ChromeDriverManager().install(), log_path=os.devnull)
+
+    driver = webdriver.Chrome(options=options, service=service)
+
+    return driver
 
 
 def get_input():
@@ -750,29 +831,39 @@ def get_input():
     if not cities:
         fail('Invalid city.')
 
-    city = cities[0]['id']
+    city_id = cities[0]['id']
+    region = cities[0]['region']
 
     interests = input(f'{Style.BRIGHT}{Fore.RED}Target interests {Fore.RESET}({Fore.RED}separated by comma{Fore.RESET}){Fore.RED}:{Fore.RESET} ')
-
     interests = list(map(lambda i: i.strip().lower(), interests.split(', ')))
 
-    return first_name, last_name, city, interests
+    return first_name, last_name, city_id, region, interests
 
+
+driver = create_driver()
+
+os.system('cls')
 
 try:
     api = vk_requests.create_api(service_token=TOKEN, api_version='5.130')
 except Exception as e:
     fail(str(e))
 
+try:
+    with open('masks.json', 'r', encoding='utf-8') as masks_file:
+        phone_masks = json.load(masks_file)
+except:
+    phone_masks = get_phone_masks()
+
 cprint('{bred}E{byellow}vil {bred}D{byellow}etective{rst}\n', mark=None)
 
 try:
-    first_name, last_name, city, interests = get_input()
+    first_name, last_name, city_id, region, interests = get_input()
 
     print()
     cprint('{byellow}Analyzing profile...')
 
-    vk_info = vk_search(first_name, last_name, city, interests)
+    vk_info = vk_search(first_name, last_name, city_id, interests)
 
     cprint('{bgreen}Done!', mark='+')
     cprint('{byellow}Analyzing images...')
