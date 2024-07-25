@@ -20,7 +20,6 @@ from core import (
 from tooltips import createToolTip
 from preferences import Preferences
 from screen_capture import ScreenCapture
-from wa_crypt import WhatsAppCrypt
 from lockscreens import (
     BrutePattern,
     BruteGenPin,
@@ -58,7 +57,6 @@ class MainWindow(BaseWindow):
         self.root['menu'] = self.menubar
         self.build_file_menus()
         self.build_decoders_menus()
-        self.build_utils_menus()
         self.build_locks_menus()
         self.build_tools_menus()
         self.build_adb_menus()
@@ -295,13 +293,6 @@ class MainWindow(BaseWindow):
 
             menu_adb.add_command(label=label_, command=action)
 
-    def build_utils_menus(self):
-        menu_utils = tk.Menu(self.menubar, tearoff=0)
-
-        self.menubar.add_cascade(menu=menu_utils, label='Apps Utils', underline=5)
-
-        menu_utils.add_command(label='WhatsApp Crypt', command=self.whatsapp_crypt)
-
     def build_locks_menus(self):
         menu_locks = tk.Menu(self.menubar, tearoff=0)
 
@@ -362,10 +353,6 @@ class MainWindow(BaseWindow):
 
     def preferences(self):
         root = Preferences(root=self.root)
-        root.mainloop()
-
-    def whatsapp_crypt(self):
-        root = WhatsAppCrypt(root=self.root)
         root.mainloop()
 
     def brute_pattern(self):

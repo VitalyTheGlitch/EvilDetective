@@ -7,7 +7,7 @@ import config
 _paragraph_re = re.compile(r'(?:\r\n|\r|\n){2,}')
 
 
-@jinja2.evalcontextfilter
+@jinja2.pass_context
 def nl2br(eval_ctx, value):
     result = '\n\n'.join(
         '<p>{0}</p>'.format(p.replace('\n', jinja2.Markup('<br>\n')))
